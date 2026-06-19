@@ -440,6 +440,66 @@ func TestProcessItem_PausedAndExternalCreateIncomplete(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestProcessItem_ExternalCreateIncomplete_RecoversViaObserve verifies the
+// create-pending guard no longer wedges forever: when the external resource is
+// verifiably absent the pending marker is cleared (fresh create can proceed),
+// and when it is present the success marker is recorded — in both cases the
+// resource leaves the incomplete state instead of refusing indefinitely.
+func TestProcessItem_ExternalCreateIncomplete_RecoversViaObserve(t *testing.T) {
+	sid, err := shortid.New(1, shortid.DefaultABC, 2342)
+	require.NoError(t, err)
+
+	// absent -> pending marker cleared, no longer incomplete
+	t.Run("absent clears pending", func(t *testing.T) {
+		opts := createTestOptions()
+		ctrl, err := New(sid, opts)
+		require.NoError(t, err)
+		ctrl.SetExternalClient(&fakeExternalClient{ObserveExists: false})
+
+		obj := createTestUnstructured("recover-absent-1", opts.Namespace)
+		meta.SetExternalCreatePending(obj, time.Now().Add(-time.Minute))
+		require.True(t, meta.ExternalCreateIncomplete(obj))
+		_, err = opts.Client.Resource(opts.GVR).Namespace(opts.Namespace).Create(context.TODO(), obj, metav1.CreateOptions{})
+		require.NoError(t, err)
+
+		ev := ctrlevent.Event{
+			EventType: ctrlevent.Observe,
+			ObjectRef: objectref.ObjectRef{APIVersion: obj.GetAPIVersion(), Kind: obj.GetKind(), Name: obj.GetName(), Namespace: obj.GetNamespace()},
+		}
+		require.NoError(t, ctrl.processItem(context.TODO(), ev))
+
+		got, err := opts.Client.Resource(opts.GVR).Namespace(opts.Namespace).Get(context.TODO(), obj.GetName(), metav1.GetOptions{})
+		require.NoError(t, err)
+		_, stillPending := got.GetAnnotations()[meta.AnnotationKeyExternalCreatePending]
+		assert.False(t, stillPending, "pending annotation should be cleared once the resource is observed absent")
+		assert.False(t, meta.ExternalCreateIncomplete(got), "resource should no longer be in the incomplete state")
+	})
+
+	// present -> success marker recorded, no longer incomplete
+	t.Run("present records success", func(t *testing.T) {
+		opts := createTestOptions()
+		ctrl, err := New(sid, opts)
+		require.NoError(t, err)
+		ctrl.SetExternalClient(&fakeExternalClient{ObserveExists: true, ObserveUpToDate: true})
+
+		obj := createTestUnstructured("recover-present-1", opts.Namespace)
+		meta.SetExternalCreatePending(obj, time.Now().Add(-time.Minute))
+		require.True(t, meta.ExternalCreateIncomplete(obj))
+		_, err = opts.Client.Resource(opts.GVR).Namespace(opts.Namespace).Create(context.TODO(), obj, metav1.CreateOptions{})
+		require.NoError(t, err)
+
+		ev := ctrlevent.Event{
+			EventType: ctrlevent.Observe,
+			ObjectRef: objectref.ObjectRef{APIVersion: obj.GetAPIVersion(), Kind: obj.GetKind(), Name: obj.GetName(), Namespace: obj.GetNamespace()},
+		}
+		require.NoError(t, ctrl.processItem(context.TODO(), ev))
+
+		got, err := opts.Client.Resource(opts.GVR).Namespace(opts.Namespace).Get(context.TODO(), obj.GetName(), metav1.GetOptions{})
+		require.NoError(t, err)
+		assert.False(t, meta.ExternalCreateIncomplete(got), "recording success should clear the incomplete state")
+	})
+}
+
 func TestHandleErr_RetryAddsToQueue(t *testing.T) {
 	sid, err := shortid.New(1, shortid.DefaultABC, 2342)
 	require.NoError(t, err)

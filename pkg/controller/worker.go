@@ -301,35 +301,71 @@ func (c *Controller) processItem(ctx context.Context, obj interface{}) error {
 		}
 	}
 
-	// If we started but never completed creation of an external resource we
-	// may have lost critical information. For example if we didn't persist
-	// an updated external name we've leaked a resource. The safest thing to
-	// do is to refuse to proceed.
+	// If we started but never completed creation of an external resource we may
+	// have lost critical information (e.g. an unpersisted external name). The
+	// historically "safe" action was to refuse to proceed, but that refuses
+	// forever: it permanently wedges the resource — and everything that depends
+	// on it — whenever a create is interrupted before the success marker is
+	// persisted (a process restart, an API timeout, a transient crash). Instead,
+	// reconcile the create-tracking annotations against reality by observing the
+	// external resource:
+	//   - observe errors     => we genuinely cannot determine the result; keep the
+	//                           conservative refuse so we never risk leaking.
+	//   - resource is absent  => the create never landed; clear the pending marker
+	//                           and proceed with a fresh create.
+	//   - resource is present => the create actually succeeded but we lost the
+	//                           success marker; record success and proceed.
 	if meta.ExternalCreateIncomplete(el) {
-		lg.Warn(errCreateIncomplete)
-		c.recordEvent(el, event.Warning(reasonCannotInitialize, actionProcessEvent, errors.New(errCreateIncomplete)))
-
-		err = unstructuredtools.SetConditions(el,
-			condition.Creating(),
-			condition.ReconcileError(errors.New(errCreateIncomplete)),
-		)
-		if err != nil {
-			lg.Error(err, "Cannot set condition")
-			c.recordEvent(el, event.Warning(reasonCannotSetConditions, actionUpdateManagedResource, err))
-			return err
+		obs := ExternalObservation{}
+		obsErr := errors.New("no external client registered")
+		if c.externalClient != nil {
+			obs, obsErr = c.externalClient.Observe(ctx, el)
 		}
 
-		el, err = tools.UpdateStatus(ctx, el, tools.UpdateOptions{
+		if obsErr != nil {
+			lg.Warn(errCreateIncomplete)
+			c.recordEvent(el, event.Warning(reasonCannotInitialize, actionProcessEvent, errors.New(errCreateIncomplete)))
+
+			err = unstructuredtools.SetConditions(el,
+				condition.Creating(),
+				condition.ReconcileError(errors.New(errCreateIncomplete)),
+			)
+			if err != nil {
+				lg.Error(err, "Cannot set condition")
+				c.recordEvent(el, event.Warning(reasonCannotSetConditions, actionUpdateManagedResource, err))
+				return err
+			}
+
+			el, err = tools.UpdateStatus(ctx, el, tools.UpdateOptions{
+				Pluralizer:    c.pluralizer,
+				DynamicClient: c.dynamicClient,
+			})
+			if err != nil {
+				lg.Error(err, "Cannot update status")
+				c.recordEvent(el, event.Warning(reasonCannotUpdateManaged, actionUpdateManagedResource, err))
+				return err
+			}
+
+			return nil
+		}
+
+		// Observe succeeded: reconcile the create-tracking annotations with the
+		// observed reality, then fall through to normal processing.
+		if obs.ResourceExists {
+			meta.SetExternalCreateSucceeded(el, time.Now())
+		} else {
+			meta.RemoveAnnotations(el, meta.AnnotationKeyExternalCreatePending)
+		}
+		el, err = tools.Update(ctx, el, tools.UpdateOptions{
 			Pluralizer:    c.pluralizer,
 			DynamicClient: c.dynamicClient,
 		})
 		if err != nil {
-			lg.Error(err, "Cannot update status")
-			c.recordEvent(el, event.Warning(reasonCannotUpdateManaged, actionUpdateManagedResource, err))
+			lg.Error(err, "Cannot reconcile external-create annotations after incomplete create")
+			c.recordEvent(el, event.Warning(reasonCannotUpdateManaged, actionProcessEvent, err))
 			return err
 		}
-
-		return nil
+		lg.Info("Recovered from incomplete external create via observe", "resourceExists", obs.ResourceExists)
 	}
 
 	if !meta.WasDeleted(el) {
