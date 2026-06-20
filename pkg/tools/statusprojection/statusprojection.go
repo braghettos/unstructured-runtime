@@ -21,13 +21,14 @@ import (
 )
 
 // Mapping mirrors snowplow's widgetDataTemplate item (decoupled from any provider CRD):
-// write the (typed) result of Expression to .status at ForPath.
+// write the (typed) result of Expression to .status at ForPath. The json tags are the wire
+// format used to ship mappings between components (e.g. core-provider → the CDC ConfigMap).
 type Mapping struct {
 	// ForPath is the dotted path under .status to write, e.g. "endpoint" or "network.host".
-	ForPath string
+	ForPath string `json:"forPath"`
 	// Expression is a ${ jq } program evaluated over the source root. A bare literal (no
 	// ${ } wrapper) is used verbatim. A bare path like ".self.spec.host" is the trivial copy.
-	Expression string
+	Expression string `json:"expression"`
 }
 
 // Project evaluates each mapping's Expression over the combined source root and writes the
