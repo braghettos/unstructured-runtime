@@ -139,3 +139,27 @@ func TestNormalize_DeepCopySafe(t *testing.T) {
 		t.Errorf("b = %#v", arr)
 	}
 }
+
+// A jq program that yields no output (empty-array iteration) must NOT write the field —
+// writing "" would violate a non-string schema type and fail the whole status update.
+func TestProject_EmptyStreamSkipsWrite(t *testing.T) {
+	cr := newCR()
+	cr.Object["spec"].(map[string]any)["empty"] = []any{}
+	mappings := []Mapping{
+		{ForPath: "skipped", Expression: `${ .self.spec.empty[] }`},   // empty stream -> skip
+		{ForPath: "emptystr", Expression: `${ "" }`},                  // legit empty string -> write
+		{ForPath: "kept", Expression: `${ .self.spec.service.host }`}, // sanity
+	}
+	if err := Project(context.Background(), cr, nil, mappings); err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+	if _, found, _ := unstructured.NestedFieldNoCopy(cr.Object, "status", "skipped"); found {
+		t.Error("empty-stream mapping must not write the field")
+	}
+	if v, found, _ := unstructured.NestedFieldNoCopy(cr.Object, "status", "emptystr"); !found || v != "" {
+		t.Errorf("empty-string result should be written as \"\": found=%v v=%v", found, v)
+	}
+	if v, _, _ := unstructured.NestedString(cr.Object, "status", "kept"); v != "demo.example.com" {
+		t.Errorf("kept = %q", v)
+	}
+}

@@ -57,9 +57,14 @@ func Project(ctx context.Context, cr *unstructured.Unstructured, resolved map[st
 		// gojq normalizes numbers in its input map IN PLACE, so never hand it the live
 		// data: evaluate against a fresh deep copy each time (also isolates mappings from
 		// one another and keeps cr / resolved untouched apart from the status writes).
-		val, err := evalOne(ctx, m.Expression, runtime.DeepCopyJSONValue(root))
+		val, write, err := evalOne(ctx, m.Expression, runtime.DeepCopyJSONValue(root))
 		if err != nil {
 			errs = append(errs, fmt.Errorf("forPath %q: %w", m.ForPath, err))
+			continue
+		}
+		if !write {
+			// The expression produced no output (e.g. iterating an empty array); leave the
+			// field unset rather than writing it.
 			continue
 		}
 		if err := setStatusField(cr, m.ForPath, val); err != nil {
@@ -95,18 +100,24 @@ func buildRoot(cr *unstructured.Unstructured, resolved map[string]any) map[strin
 }
 
 // evalOne resolves a single expression. A ${ jq } expression is evaluated over data; a bare
-// literal is taken verbatim. The result string is typed via jqutil.InferType and then
-// normalized to DeepCopyJSONValue-safe types.
-func evalOne(ctx context.Context, expression string, data any) (any, error) {
-	s := expression
+// literal is taken verbatim. The result string is typed via jqutil.InferType and normalized
+// to DeepCopyJSONValue-safe types. The bool reports whether a value should be written: a jq
+// program that yields NO output (e.g. iterating an empty array — jqutil.Eval returns the
+// empty string, distinct from a "" string result which encodes as `""`) returns false, so
+// the engine leaves the field unset rather than coercing it to "" (which would violate a
+// non-string schema type and fail the whole status update).
+func evalOne(ctx context.Context, expression string, data any) (any, bool, error) {
 	if q, ok := jqutil.MaybeQuery(expression); ok {
 		out, err := jqutil.Eval(ctx, jqutil.EvalOptions{Query: q, Data: data})
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
-		s = out
+		if out == "" {
+			return nil, false, nil
+		}
+		return normalize(jqutil.InferType(out)), true, nil
 	}
-	return normalize(jqutil.InferType(s)), nil
+	return normalize(jqutil.InferType(expression)), true, nil
 }
 
 // setStatusField writes val at status.<dotted forPath>, building intermediate objects.
