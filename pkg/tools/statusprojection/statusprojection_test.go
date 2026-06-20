@@ -117,6 +117,26 @@ func TestProject_PerMappingErrorIsolation(t *testing.T) {
 	}
 }
 
+// A caller-supplied `resolved` source containing a non-JSON-safe value (here a plain Go int,
+// which runtime.DeepCopyJSONValue panics on) must degrade to an aggregated error rather than
+// crashing the worker goroutine. The whole root is deep-copied per mapping, so a globally bad
+// source fails every mapping; the core guarantee under test is "returns an error, does not
+// panic". A second JSON-safe mapping is included to confirm Project still runs to completion.
+func TestProject_NonJSONSafeSourceDoesNotPanic(t *testing.T) {
+	cr := newCR()
+	resolved := map[string]any{
+		"helm": map[string]any{"bad": 5}, // plain int, not int64 -> DeepCopyJSONValue panics
+	}
+	mappings := []Mapping{
+		{ForPath: "host", Expression: `${ .self.spec.service.host }`}, // JSON-safe mapping
+		{ForPath: "version", Expression: `${ .helm.bad }`},
+	}
+	err := Project(context.Background(), cr, resolved, mappings)
+	if err == nil {
+		t.Fatal("expected an aggregated error for the non-JSON-safe source")
+	}
+}
+
 func TestSetObservedGeneration(t *testing.T) {
 	cr := newCR()
 	if err := SetObservedGeneration(cr); err != nil {
