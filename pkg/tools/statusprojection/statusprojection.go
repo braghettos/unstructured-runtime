@@ -57,7 +57,15 @@ func Project(ctx context.Context, cr *unstructured.Unstructured, resolved map[st
 		// gojq normalizes numbers in its input map IN PLACE, so never hand it the live
 		// data: evaluate against a fresh deep copy each time (also isolates mappings from
 		// one another and keeps cr / resolved untouched apart from the status writes).
-		val, write, err := evalOne(ctx, m.Expression, runtime.DeepCopyJSONValue(root))
+		// safeDeepCopy guards against caller-supplied `resolved` sources that contain
+		// non-JSON-safe values (runtime.DeepCopyJSONValue panics on those); a bad source
+		// degrades to a per-mapping error rather than crashing the worker goroutine.
+		dataCopy, err := safeDeepCopy(root)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("forPath %q: %w", m.ForPath, err))
+			continue
+		}
+		val, write, err := evalOne(ctx, m.Expression, dataCopy)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("forPath %q: %w", m.ForPath, err))
 			continue
@@ -72,6 +80,19 @@ func Project(ctx context.Context, cr *unstructured.Unstructured, resolved map[st
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// safeDeepCopy wraps runtime.DeepCopyJSONValue, which PANICS if v contains any value that is
+// not a JSON-native type (e.g. a plain int/int32, a typed struct, map[string]string, or a
+// channel). Caller-supplied `resolved` sources are not guaranteed to be JSON-safe, so a bad
+// value is recovered and returned as an error rather than allowed to crash the goroutine.
+func safeDeepCopy(v any) (out any, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("non-JSON-safe source data: %v", r)
+		}
+	}()
+	return runtime.DeepCopyJSONValue(v), nil
 }
 
 // SetObservedGeneration writes status.observedGeneration = metadata.generation.
