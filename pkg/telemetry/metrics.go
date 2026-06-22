@@ -19,12 +19,16 @@ const (
 	defaultExportInterval = 30 * time.Second
 )
 
-// Config controls OpenTelemetry metrics export.
+// Config controls OpenTelemetry metrics + trace export.
 type Config struct {
 	Enabled        bool
+	TracingEnabled bool // gate the trace pipeline independently of metrics (both default off)
 	ServiceName    string
 	ExportInterval time.Duration
 	DeploymentName string // Deployment name for stable resource identification
+	Namespace      string // service.namespace resource attribute
+	Version        string // service.version resource attribute
+	CompositionID  string // krateo.io/composition-id resource attribute (the reconciled GVR/UID)
 }
 
 // Metrics exposes a small set of low-cardinality runtime metrics for
@@ -106,19 +110,7 @@ func Setup(ctx context.Context, log logging.Logger, cfg Config) (*Metrics, func(
 		return nil, nil, err
 	}
 
-	// Build resource attributes including deployment name for stable multi-instance identification
-	attrs := []attribute.KeyValue{
-		attribute.String("service.name", serviceName),
-	}
-	if cfg.DeploymentName != "" {
-		attrs = append(attrs,
-			attribute.String("k8s.deployment.name", cfg.DeploymentName),
-			attribute.String("service.instance.id", cfg.DeploymentName),
-		)
-	}
-
-	res, err := resource.Merge(resource.Default(),
-		resource.NewSchemaless(attrs...))
+	res, err := buildResource(cfg)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -140,6 +132,36 @@ func Setup(ctx context.Context, log logging.Logger, cfg Config) (*Metrics, func(
 	log.Info("OpenTelemetry metrics initialized", "deploymentName", cfg.DeploymentName, "serviceName", serviceName, "exportInterval", exportInterval)
 
 	return metrics, provider.Shutdown, nil
+}
+
+// buildResource assembles the OTel resource shared by metrics AND traces, so every signal
+// (and the Phase-1 logs, which read the same env in the consumers) carries identical
+// service.name/namespace/version + krateo.io/composition-id. Optional attrs are omitted when
+// their Config field is empty.
+func buildResource(cfg Config) (*resource.Resource, error) {
+	serviceName := cfg.ServiceName
+	if serviceName == "" {
+		serviceName = defaultServiceName
+	}
+	attrs := []attribute.KeyValue{
+		attribute.String("service.name", serviceName),
+	}
+	if cfg.Namespace != "" {
+		attrs = append(attrs, attribute.String("service.namespace", cfg.Namespace))
+	}
+	if cfg.Version != "" {
+		attrs = append(attrs, attribute.String("service.version", cfg.Version))
+	}
+	if cfg.CompositionID != "" {
+		attrs = append(attrs, attribute.String("krateo.io/composition-id", cfg.CompositionID))
+	}
+	if cfg.DeploymentName != "" {
+		attrs = append(attrs,
+			attribute.String("k8s.deployment.name", cfg.DeploymentName),
+			attribute.String("service.instance.id", cfg.DeploymentName),
+		)
+	}
+	return resource.Merge(resource.Default(), resource.NewSchemaless(attrs...))
 }
 
 func newMetrics(meter metric.Meter, log logging.Logger, deploymentName string) (*Metrics, error) {
