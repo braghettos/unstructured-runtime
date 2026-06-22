@@ -20,9 +20,7 @@ var (
 func Logger(ctx context.Context) logging.Logger {
 	log, ok := ctx.Value(contextKeyLogger).(logging.Logger)
 	if !ok {
-		log = logging.NewSlogLogger(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-			Level: slog.LevelInfo,
-		})))
+		log = logging.NewSlogLogger(slog.New(logging.NewOTelJSONHandler(slog.LevelInfo, os.Stderr)))
 	}
 
 	return log
@@ -35,9 +33,7 @@ func WithLogger(root logging.Logger) WithContextFunc {
 			if os.Getenv("DEBUG") == "true" {
 				logLevel = slog.LevelDebug
 			}
-			root = logging.NewSlogLogger(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-				Level: logLevel,
-			})))
+			root = logging.NewSlogLogger(slog.New(logging.NewOTelJSONHandler(logLevel, os.Stderr)))
 		}
 
 		return context.WithValue(ctx, contextKeyLogger, root)
