@@ -13,6 +13,14 @@ const (
 	// systems.
 	AnnotationKeyExternalName = "krateo.io/external-name"
 
+	// AnnotationKeyTraceparent carries the W3C traceparent of the reconcile that created or
+	// updated this object, so the controller that reconciles it continues the distributed
+	// trace across the compose-of-compositions tree.
+	AnnotationKeyTraceparent = "krateo.io/traceparent"
+
+	// AnnotationKeyTracestate carries the W3C tracestate alongside AnnotationKeyTraceparent.
+	AnnotationKeyTracestate = "krateo.io/tracestate"
+
 	// AnnotationKeyExternalCreatePending is the key in the annotations map
 	// of a resource that indicates the last time creation of the external
 	// resource was pending (i.e. about to happen). Its value must be an
