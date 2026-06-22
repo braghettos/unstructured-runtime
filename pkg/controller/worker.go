@@ -13,6 +13,7 @@ import (
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller/priorityqueue"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/errors"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/meta"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/telemetry"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/tools"
 	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured/condition"
@@ -231,7 +232,7 @@ func (c *Controller) handleErr(err error, obj ctrlevent.Event, priority int) {
 	}
 }
 
-func (c *Controller) processItem(ctx context.Context, obj interface{}) error {
+func (c *Controller) processItem(ctx context.Context, obj interface{}) (err error) {
 	lg := contextutils.Logger(ctx).WithValues("traceId", contextutils.TraceId(ctx, false))
 
 	evt, ok := obj.(ctrlevent.Event)
@@ -255,6 +256,15 @@ func (c *Controller) processItem(ctx context.Context, obj interface{}) error {
 		// if the object is not found, we will not retry to process it and we not throw an error
 		return nil
 	}
+
+	// Per-reconcile root span, continuing any cross-composition trace carried on el's
+	// krateo.io/traceparent annotation. No-op tracer when tracing is disabled; the deferred
+	// RecordSpanError reads the named return value.
+	ctx, span := telemetry.StartReconcileSpan(ctx, el)
+	defer func() {
+		telemetry.RecordSpanError(span, err)
+		span.End()
+	}()
 
 	if meta.IsPaused(el) {
 		log := lg.WithValues("annotation", meta.AnnotationKeyReconciliationPaused)

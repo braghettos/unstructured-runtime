@@ -7,6 +7,7 @@ import (
 
 	"github.com/krateoplatformops/plumbing/shortid"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type contextKey string
@@ -47,6 +48,13 @@ func WithTraceId(traceId string) WithContextFunc {
 }
 
 func TraceId(ctx context.Context, generate bool) string {
+	// Prefer the live OTel span's trace ID (the real 32-hex W3C id) so the "traceId" log
+	// field correlates with the distributed trace; fall back to the shortid for the
+	// no-otel path.
+	if sc := trace.SpanContextFromContext(ctx); sc.HasTraceID() {
+		return sc.TraceID().String()
+	}
+
 	traceId, ok := ctx.Value(contextKeyTraceId).(string)
 	if ok {
 		return traceId
