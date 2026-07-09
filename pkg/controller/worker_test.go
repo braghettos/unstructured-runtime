@@ -13,7 +13,6 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/krateoplatformops/plumbing/shortid"
-	prettylog "github.com/krateoplatformops/plumbing/slogs/pretty"
 	ctrlevent "github.com/krateoplatformops/unstructured-runtime/pkg/controller/event"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller/objectref"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller/priorityqueue"
@@ -79,13 +78,10 @@ func (f *fakeExternalClientObserveError) Delete(ctx context.Context, mg *unstruc
 func TestRunWorker_RequeuesOnProcessErrorAndRemovesItem(t *testing.T) {
 	sid, err := shortid.New(1, shortid.DefaultABC, 2342)
 	require.NoError(t, err)
-	lh := prettylog.New(&slog.HandlerOptions{
+	lh := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level:     slog.LevelDebug,
 		AddSource: false,
-	},
-		prettylog.WithDestinationWriter(os.Stderr),
-		prettylog.WithOutputEmptyAttrs(),
-	)
+	})
 	opts := createTestOptions()
 	opts.MaxRetries = 3
 	opts.ResyncInterval = 3 * time.Second

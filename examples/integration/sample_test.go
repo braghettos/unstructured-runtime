@@ -13,7 +13,6 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/krateoplatformops/plumbing/e2e"
-	prettylog "github.com/krateoplatformops/plumbing/slogs/pretty"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller/builder"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
@@ -129,13 +128,10 @@ func TestKindWithE2EFramework(t *testing.T) {
 				ProviderName: "deployment-provider",
 			}
 
-			lh := prettylog.New(&slog.HandlerOptions{
+			lh := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 				Level:     slog.LevelDebug,
 				AddSource: false,
-			},
-				prettylog.WithDestinationWriter(os.Stderr),
-				prettylog.WithOutputEmptyAttrs(),
-			)
+			})
 			logger := logging.NewLogrLogger(logr.FromSlogHandler(slog.New(lh).Handler()))
 
 			ctr, err := builder.Build(context.Background(), cfgBuilder,
