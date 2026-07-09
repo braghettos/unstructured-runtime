@@ -5,14 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/logr/testr"
-	prettylog "github.com/krateoplatformops/plumbing/slogs/pretty"
 )
 
 func TestNewNopLogger(t *testing.T) {
@@ -166,29 +164,48 @@ func TestSlogAndLogrOutputsMatch(t *testing.T) {
 	// prepare slog -> buf1
 	var buf1 bytes.Buffer
 
-	lh1 := prettylog.New(&slog.HandlerOptions{
-		Level:     slog.LevelDebug,
-		AddSource: false,
-	},
-		prettylog.WithColor(),
-		prettylog.WithOutputEmptyAttrs(),
-		prettylog.WithDestinationWriter(&buf1),
-	)
+	// Normalize the two representation differences so the slog-path and logr-path
+	// outputs compare token-for-token (see parseLogTokens below): drop the
+	// wall-clock time, and collapse offset levels to the base level name. The logr
+	// bridge (logr.FromSlogHandler) emits Debug at an offset slog level (DEBUG+3),
+	// which the previous pretty handler rendered as plain "DEBUG"; TextHandler
+	// shows it raw, so we re-collapse it here to preserve the test's intent.
+	normalize := func(_ []string, a slog.Attr) slog.Attr {
+		switch a.Key {
+		case slog.TimeKey:
+			return slog.Attr{}
+		case slog.LevelKey:
+			if lvl, ok := a.Value.Any().(slog.Level); ok {
+				switch {
+				case lvl < slog.LevelInfo:
+					a.Value = slog.StringValue("DEBUG")
+				case lvl < slog.LevelWarn:
+					a.Value = slog.StringValue("INFO")
+				case lvl < slog.LevelError:
+					a.Value = slog.StringValue("WARN")
+				default:
+					a.Value = slog.StringValue("ERROR")
+				}
+			}
+		}
+		return a
+	}
+	lh1 := slog.NewTextHandler(&buf1, &slog.HandlerOptions{
+		Level:       slog.LevelDebug,
+		AddSource:   false,
+		ReplaceAttr: normalize,
+	})
 
 	slogger := slog.New(lh1)
 	sl := NewSlogLogger(slogger)
 
 	// prepare logr (stdr) -> buf2
 	var buf2 bytes.Buffer
-	lh2 := prettylog.New(&slog.HandlerOptions{
-		Level:     slog.LevelDebug,
-		AddSource: false,
-	},
-		prettylog.WithDestinationWriter(os.Stderr),
-		prettylog.WithColor(),
-		prettylog.WithOutputEmptyAttrs(),
-		prettylog.WithDestinationWriter(&buf2),
-	)
+	lh2 := slog.NewTextHandler(&buf2, &slog.HandlerOptions{
+		Level:       slog.LevelDebug,
+		AddSource:   false,
+		ReplaceAttr: normalize,
+	})
 	ll := NewLogrLogger(logr.FromSlogHandler(lh2))
 
 	cases := []struct {
