@@ -84,6 +84,16 @@ const (
 	errUpdateCriticalAnnotations = "cannot update critical annotations"
 )
 
+// externalCreateRecoveryGracePeriod bounds how long after an external Create attempt the
+// incomplete-create recovery keeps waiting for the resource to become observable before it
+// concludes the create never landed and recreates. It guards against duplicating a resource that
+// DID get created but is not yet visible in an eventually-consistent external API.
+const externalCreateRecoveryGracePeriod = 2 * time.Minute
+
+// externalCreateRecoveryReobserveInterval is how soon to re-observe while still within the grace
+// period. A var (not const) only so tests can drive the requeue without a real delay.
+var externalCreateRecoveryReobserveInterval = 15 * time.Second
+
 func (c *Controller) recordMetric(evt ctrlevent.Event, operation string, err error) {
 	result := "success"
 	if err != nil {
@@ -363,6 +373,27 @@ func (c *Controller) processItem(ctx context.Context, obj interface{}) (err erro
 		// observed reality, then fall through to normal processing.
 		if obs.ResourceExists {
 			meta.SetExternalCreateSucceeded(el, time.Now())
+		} else if meta.ExternalCreatePendingDuring(el, externalCreateRecoveryGracePeriod) {
+			// Confirm-the-negative before recreating: an external Create that DID land may not yet be
+			// visible in an eventually-consistent external API. While the create attempt is still
+			// within the recovery grace period, DO NOT clear the pending marker or recreate (that
+			// would leak a duplicate external resource). Requeue to re-observe; once the resource
+			// becomes visible we record success, and only once the grace period has fully elapsed is a
+			// still-absent resource treated as a genuine miss to be recreated.
+			lg.Info("incomplete external create: resource not yet observed, waiting out recovery grace period before recreating",
+				"pendingAge", time.Since(meta.GetExternalCreatePending(el)).String(),
+				"gracePeriod", externalCreateRecoveryGracePeriod.String())
+			// LowPriority: this is a patient background re-observe, not a user-urgent event — it must
+			// not crowd out genuine user Update/Delete work during a mass restart-mid-create.
+			c.queue.AddWithOpts(priorityqueue.AddOpts{
+				After:    externalCreateRecoveryReobserveInterval,
+				Priority: LowPriority,
+			}, ctrlevent.Event{
+				EventType: evt.EventType,
+				ObjectRef: evt.ObjectRef,
+				QueuedAt:  time.Now(),
+			})
+			return nil
 		} else {
 			meta.RemoveAnnotations(el, meta.AnnotationKeyExternalCreatePending)
 		}

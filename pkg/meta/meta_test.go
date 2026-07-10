@@ -528,6 +528,32 @@ func TestExternalCreateSucceededDuring(t *testing.T) {
 	}
 }
 
+func TestExternalCreatePendingDuring(t *testing.T) {
+	mk := func(ago time.Duration, set bool) metav1.Object {
+		o := &corev1.Pod{}
+		if set {
+			SetExternalCreatePending(o, time.Now().Add(-ago))
+		}
+		return o
+	}
+	cases := map[string]struct {
+		o    metav1.Object
+		d    time.Duration
+		want bool
+	}{
+		"NoPendingMarker":   {mk(0, false), time.Minute, false},
+		"PendingWithin":     {mk(30 * time.Second, true), time.Minute, true},
+		"PendingTooLongAgo": {mk(2 * time.Minute, true), time.Minute, false},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := ExternalCreatePendingDuring(tc.o, tc.d); got != tc.want {
+				t.Errorf("ExternalCreatePendingDuring = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestExternalCreateIncomplete(t *testing.T) {
 
 	now := time.Now().Format(time.RFC3339)
