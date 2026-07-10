@@ -39,6 +39,11 @@ type options struct {
 	watchAnnotations ctrlevent.AnnotationEvents
 
 	actionsEvent ctrlevent.ActionsEvent
+
+	// gracefulShutdownTimeout bounds how long the controller keeps running after its context
+	// is cancelled (SIGTERM) to let in-flight reconciles finish. nil => controller default (30s);
+	// 0 => disabled (abrupt); negative => wait forever. See controller.Options.GracefulShutdownTimeout.
+	gracefulShutdownTimeout *time.Duration
 }
 
 func defaultOptions() options {
@@ -75,6 +80,16 @@ func WithPluralizer(p pluralizer.PluralizerInterface) func(o *options) {
 func WithNamespace(ns string) func(o *options) {
 	return func(o *options) {
 		o.namespace = ns
+	}
+}
+
+// WithGracefulShutdownTimeout sets the drain window after context cancellation (SIGTERM) during
+// which in-flight reconciles are allowed to finish before the process exits. It must be set below
+// the pod's terminationGracePeriodSeconds. A value of 0 disables the drain (abrupt shutdown); a
+// negative value waits indefinitely. Unset => the controller default (30s).
+func WithGracefulShutdownTimeout(d time.Duration) func(o *options) {
+	return func(o *options) {
+		o.gracefulShutdownTimeout = &d
 	}
 }
 

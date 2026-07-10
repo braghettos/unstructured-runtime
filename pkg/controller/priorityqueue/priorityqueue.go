@@ -261,7 +261,18 @@ func (w *priorityqueue[T]) spin() {
 				delete(w.items, item.Key)
 				toDelete = append(toDelete, item)
 				w.becameReady.Delete(item.Key)
-				w.get <- *item
+				// The hand-off is made selectable on w.done: a parked worker in GetWithPriority
+				// now also selects on w.done, so on shutdown it may wake there instead of
+				// receiving this item. A bare blocking send would then wedge forever while this
+				// closure holds BOTH w.lock and w.lockedLock, hanging every subsequent Len()/Done()
+				// and the graceful drain. On shutdown, abandon the hand-off and stop ascending so
+				// the deferred Unlocks release the locks (the item stays "locked" but undelivered —
+				// harmless during shutdown, it is simply dropped and re-listed by the next process).
+				select {
+				case w.get <- *item:
+				case <-w.done:
+					return false
+				}
 
 				return true
 			})
@@ -295,9 +306,21 @@ func (w *priorityqueue[T]) GetWithPriority() (_ T, priority int, shutdown bool) 
 
 	w.notifyItemOrWaiterAdded()
 
-	item := <-w.get
-
-	return item.Key, item.Priority, w.shutdown.Load()
+	select {
+	case <-w.done:
+		// The queue was shut down while this worker was parked waiting for an item.
+		// Without this branch a worker blocked on <-w.get is never woken by ShutDown()
+		// and a graceful drain would hang until its timeout on every shutdown.
+		//
+		// We intentionally do NOT decrement w.waiters here. The counter is only consulted by spin()
+		// to decide whether to hand out items; at shutdown any resulting stale count merely lets
+		// spin() lock-and-abandon one extra item (harmless — the item is dropped and re-listed by the
+		// next process), and spin()'s hand-off is itself selectable on w.done so it can never wedge.
+		var zero T
+		return zero, 0, true
+	case item := <-w.get:
+		return item.Key, item.Priority, w.shutdown.Load()
+	}
 }
 
 func (w *priorityqueue[T]) Get() (item T, shutdown bool) {
@@ -329,7 +352,13 @@ func (w *priorityqueue[T]) Done(item T) {
 }
 
 func (w *priorityqueue[T]) ShutDown() {
-	w.shutdown.Store(true)
+	// CompareAndSwap makes ShutDown idempotent: it may be called both from the
+	// controller's drain path and a deferred cleanup. Closing w.done wakes every
+	// worker parked in GetWithPriority and stops the spin()/logState()/unfinished-work
+	// background goroutines.
+	if w.shutdown.CompareAndSwap(false, true) {
+		close(w.done)
+	}
 }
 
 // ShutDownWithDrain just calls ShutDown, as the draining
