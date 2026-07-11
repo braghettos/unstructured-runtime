@@ -445,15 +445,22 @@ func TestProcessItem_ExternalCreateIncomplete_RecoversViaObserve(t *testing.T) {
 	sid, err := shortid.New(1, shortid.DefaultABC, 2342)
 	require.NoError(t, err)
 
-	// absent -> pending marker cleared, no longer incomplete
-	t.Run("absent clears pending", func(t *testing.T) {
+	// absent but the create was attempted RECENTLY -> confirm-the-negative: keep pending and wait
+	// (the create may have landed but not yet be observable), do NOT clear or recreate.
+	t.Run("absent within grace keeps pending and waits", func(t *testing.T) {
 		opts := createTestOptions()
 		ctrl, err := New(sid, opts)
 		require.NoError(t, err)
 		ctrl.SetExternalClient(&fakeExternalClient{ObserveExists: false})
 
-		obj := createTestUnstructured("recover-absent-1", opts.Namespace)
-		meta.SetExternalCreatePending(obj, time.Now().Add(-time.Minute))
+		// Drive the requeue without a real delay so we can assert it actually lands (a silently
+		// dropped requeue would otherwise leave the object waiting only for the slow resync).
+		prev := externalCreateRecoveryReobserveInterval
+		externalCreateRecoveryReobserveInterval = 0
+		defer func() { externalCreateRecoveryReobserveInterval = prev }()
+
+		obj := createTestUnstructured("recover-absent-recent", opts.Namespace)
+		meta.SetExternalCreatePending(obj, time.Now().Add(-30*time.Second)) // well within the 2m grace
 		require.True(t, meta.ExternalCreateIncomplete(obj))
 		_, err = opts.Client.Resource(opts.GVR).Namespace(opts.Namespace).Create(context.TODO(), obj, metav1.CreateOptions{})
 		require.NoError(t, err)
@@ -467,7 +474,35 @@ func TestProcessItem_ExternalCreateIncomplete_RecoversViaObserve(t *testing.T) {
 		got, err := opts.Client.Resource(opts.GVR).Namespace(opts.Namespace).Get(context.TODO(), obj.GetName(), metav1.GetOptions{})
 		require.NoError(t, err)
 		_, stillPending := got.GetAnnotations()[meta.AnnotationKeyExternalCreatePending]
-		assert.False(t, stillPending, "pending annotation should be cleared once the resource is observed absent")
+		assert.True(t, stillPending, "pending must be kept while within the recovery grace period (guard against duplicating an eventually-consistent create)")
+		assert.True(t, meta.ExternalCreateIncomplete(got), "resource should remain incomplete (waiting) within the grace period")
+		assert.GreaterOrEqual(t, ctrl.queue.Len(), 1, "a re-observe must be requeued while waiting (not silently dropped)")
+	})
+
+	// absent AND the create was attempted long ago (beyond the grace period) -> the create genuinely
+	// never landed; clear pending so a fresh create proceeds.
+	t.Run("absent beyond grace clears pending", func(t *testing.T) {
+		opts := createTestOptions()
+		ctrl, err := New(sid, opts)
+		require.NoError(t, err)
+		ctrl.SetExternalClient(&fakeExternalClient{ObserveExists: false})
+
+		obj := createTestUnstructured("recover-absent-old", opts.Namespace)
+		meta.SetExternalCreatePending(obj, time.Now().Add(-10*time.Minute)) // beyond the 2m grace
+		require.True(t, meta.ExternalCreateIncomplete(obj))
+		_, err = opts.Client.Resource(opts.GVR).Namespace(opts.Namespace).Create(context.TODO(), obj, metav1.CreateOptions{})
+		require.NoError(t, err)
+
+		ev := ctrlevent.Event{
+			EventType: ctrlevent.Observe,
+			ObjectRef: objectref.ObjectRef{APIVersion: obj.GetAPIVersion(), Kind: obj.GetKind(), Name: obj.GetName(), Namespace: obj.GetNamespace()},
+		}
+		require.NoError(t, ctrl.processItem(context.TODO(), ev))
+
+		got, err := opts.Client.Resource(opts.GVR).Namespace(opts.Namespace).Get(context.TODO(), obj.GetName(), metav1.GetOptions{})
+		require.NoError(t, err)
+		_, stillPending := got.GetAnnotations()[meta.AnnotationKeyExternalCreatePending]
+		assert.False(t, stillPending, "pending should be cleared once the resource is confirmed absent beyond the grace period")
 		assert.False(t, meta.ExternalCreateIncomplete(got), "resource should no longer be in the incomplete state")
 	})
 
