@@ -37,6 +37,10 @@ const LowPriority = -100 //Low priority for the priorityqueue
 const NormalPriority = 0 //Normal priority for the priorityqueue
 const HighPriority = 100 //High priority for the priorityqueue
 
+// defaultGracefulShutdownPeriod is the default drain window after context
+// cancellation (SIGTERM), matching controller-runtime's manager default.
+const defaultGracefulShutdownPeriod = 30 * time.Second
+
 // An ExternalClient manages the lifecycle of an external resource.
 // None of the calls here should be blocking. All of the calls should be
 // idempotent. For example, Create call should not return AlreadyExists error
@@ -82,6 +86,16 @@ type Options struct {
 	WatchAnnotations  ctrlevent.AnnotationEvents
 	MaxRetries        int
 	ActionsEvent      ctrlevent.ActionsEvent
+
+	// GracefulShutdownTimeout bounds how long Run keeps the process alive after its
+	// context is cancelled (SIGTERM), letting in-flight reconciles finish before exit.
+	// Pointer semantics mirror controller-runtime's manager.Options.GracefulShutdownTimeout:
+	//   nil       => default (defaultGracefulShutdownPeriod, 30s)
+	//   0         => graceful shutdown disabled (abrupt exit, the pre-drain behavior)
+	//   negative  => wait forever for in-flight reconciles
+	// The value MUST be set below the pod's terminationGracePeriodSeconds or the kubelet
+	// SIGKILLs mid-drain.
+	GracefulShutdownTimeout *time.Duration
 }
 
 func (o Options) validate() error {
@@ -126,6 +140,12 @@ type Controller struct {
 	metrics           *telemetry.Metrics
 	externalClient    ExternalClient
 	maxRetries        int
+
+	// gracefulShutdownTimeout is the resolved drain window used by Run on shutdown.
+	// Guarded by gracefulShutdownMu so a future leader-election runnable can zero it via
+	// SetGracefulShutdownTimeout (release-on-lease-loss) without racing Run's read.
+	gracefulShutdownMu      sync.RWMutex
+	gracefulShutdownTimeout time.Duration
 }
 
 var (
@@ -484,19 +504,25 @@ func New(sid *shortid.Shortid, opts Options) (*Controller, error) {
 			},
 		},
 	})
+	gracefulShutdownTimeout := defaultGracefulShutdownPeriod
+	if opts.GracefulShutdownTimeout != nil {
+		gracefulShutdownTimeout = *opts.GracefulShutdownTimeout
+	}
+
 	return &Controller{
-		dynamicClient:     opts.Client,
-		gvr:               opts.GVR,
-		items:             items,
-		recorder:          opts.Recorder,
-		throttledRecorder: opts.ThrottledRecorder,
-		logger:            opts.Logger,
-		metrics:           opts.Metrics,
-		informer:          informer,
-		queue:             finalQueue,
-		pluralizer:        opts.Pluralizer,
-		metricsServer:     opts.MetricsServer,
-		maxRetries:        opts.MaxRetries,
+		dynamicClient:           opts.Client,
+		gvr:                     opts.GVR,
+		items:                   items,
+		recorder:                opts.Recorder,
+		throttledRecorder:       opts.ThrottledRecorder,
+		logger:                  opts.Logger,
+		metrics:                 opts.Metrics,
+		informer:                informer,
+		queue:                   finalQueue,
+		pluralizer:              opts.Pluralizer,
+		metricsServer:           opts.MetricsServer,
+		maxRetries:              opts.MaxRetries,
+		gracefulShutdownTimeout: gracefulShutdownTimeout,
 	}, nil
 }
 
@@ -505,11 +531,19 @@ func (c *Controller) SetExternalClient(ec ExternalClient) {
 }
 
 // Run begins watching and syncing.
+// Run starts the informer and worker pool and blocks until ctx is cancelled (SIGTERM). On
+// cancellation it performs a bounded graceful drain: it stops accepting new work and lets
+// in-flight reconciles finish under a context that is NOT cancelled by the signal, up to
+// GracefulShutdownTimeout, before returning. See Options.GracefulShutdownTimeout for the knob.
 func (c *Controller) Run(ctx context.Context, numWorkers int) error {
 	defer utilruntime.HandleCrash()
+	// Idempotent (CAS-guarded): guarantees the queue is shut down on any early return below
+	// (e.g. cache-sync failure). The drain path also calls ShutDown explicitly.
 	defer c.queue.ShutDown()
 
 	c.logger.Info("Starting controller")
+	// The informer runs under the caller's ctx, so event intake stops the instant SIGTERM
+	// cancels it — no new work is admitted once shutdown begins.
 	go c.informer.Run(ctx.Done())
 
 	// Start metrics server in goroutine so it doesn't block
@@ -530,16 +564,85 @@ func (c *Controller) Run(ctx context.Context, numWorkers int) error {
 		return err
 	}
 
+	// reconcileCtx is derived from context.Background(), NOT from the caller's ctx, so an
+	// in-flight reconcile keeps a live context (its API writes complete) even after SIGTERM
+	// cancels ctx. It is cancelled only once the drain finishes or the grace period expires.
+	reconcileCtx, reconcileCancel := context.WithCancel(context.Background())
+	defer reconcileCancel()
+
+	// stopWorkers stops wait.Until from relaunching runWorker once we begin draining.
+	stopWorkers := make(chan struct{})
+	var wg sync.WaitGroup
+
 	c.logger.Info(fmt.Sprintf("Starting workers: %d", numWorkers))
 	for i := 0; i < numWorkers; i++ {
-		go wait.Until(func() {
-			c.runWorker(ctx)
-		}, 2*time.Second, ctx.Done())
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// wait.Until preserves the panic-restart-with-2s-backoff behavior. runWorker
+			// returns when the queue is shut down (GetWithPriority reports shutdown), and
+			// closing stopWorkers stops the relaunch. Neither cancels reconcileCtx, so an
+			// in-flight reconcile is never severed by loop teardown — only by the explicit
+			// reconcileCancel() below once the grace period is exhausted.
+			wait.Until(func() {
+				c.runWorker(reconcileCtx)
+			}, 2*time.Second, stopWorkers)
+		}()
 	}
 	c.logger.Info("Controller ready.")
 
-	<-ctx.Done()
-	c.logger.Info("Stopping controller.")
+	<-ctx.Done() // SIGTERM (or caller cancel): begin the bounded drain.
+	timeout := c.getGracefulShutdownTimeout()
+	c.logger.Info("Stopping controller; draining in-flight reconciles", "gracePeriod", timeout.String())
 
+	// Stop relaunching workers and wake any worker parked in GetWithPriority.
+	close(stopWorkers)
+	c.queue.ShutDown()
+
+	if timeout == 0 {
+		// Graceful shutdown disabled: reproduce the pre-drain behavior exactly — cancel in-flight
+		// reconciles and return immediately WITHOUT awaiting workers. Awaiting them here would let a
+		// reconcile that ignores ctx hold the process open indefinitely, which the old fire-and-forget
+		// code never did. The workers exit under the cancelled reconcileCtx / shut-down queue as the
+		// process tears down.
+		reconcileCancel()
+		return nil
+	}
+
+	drained := make(chan struct{})
+	go func() { wg.Wait(); close(drained) }()
+
+	if timeout < 0 {
+		<-drained // wait forever for in-flight reconciles
+		c.logger.Info("All workers drained cleanly")
+		return nil
+	}
+
+	select {
+	case <-drained:
+		c.logger.Info("All workers drained cleanly")
+	case <-time.After(timeout):
+		// Grace period expired: cancel in-flight reconciles and return. A reconcile that
+		// honors ctx unwinds promptly; one that ignores it is abandoned (the process exits
+		// and the pod's terminationGracePeriodSeconds is the hard ceiling).
+		c.logger.Info("Graceful shutdown period expired; cancelling in-flight reconciles")
+		reconcileCancel()
+	}
 	return nil
+}
+
+// SetGracefulShutdownTimeout overrides the drain window at runtime. It exists as the seam for
+// a future leader-election runnable to force an immediate release on lease loss
+// (SetGracefulShutdownTimeout(0) in OnStoppedLeading, mirroring controller-runtime), avoiding a
+// split-brain double-writer during HA rollouts.
+func (c *Controller) SetGracefulShutdownTimeout(d time.Duration) {
+	c.gracefulShutdownMu.Lock()
+	defer c.gracefulShutdownMu.Unlock()
+	c.gracefulShutdownTimeout = d
+}
+
+func (c *Controller) getGracefulShutdownTimeout() time.Duration {
+	c.gracefulShutdownMu.RLock()
+	defer c.gracefulShutdownMu.RUnlock()
+	return c.gracefulShutdownTimeout
 }

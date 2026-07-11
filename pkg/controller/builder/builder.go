@@ -101,8 +101,9 @@ func Build(ctx context.Context, conf Configuration, optsFuncs ...FuncOption) (*c
 		GlobalRateLimiter: opts.globalRateLimiter,
 		MetricsServer:     metricsServer,
 		WatchAnnotations:  opts.watchAnnotations,
-		MaxRetries:        opts.maxRetries,
-		ActionsEvent:      opts.actionsEvent,
+		MaxRetries:              opts.maxRetries,
+		ActionsEvent:            opts.actionsEvent,
+		GracefulShutdownTimeout: opts.gracefulShutdownTimeout,
 	})
 	if err != nil {
 		opts.logger.Error(err, "failed to create controller")

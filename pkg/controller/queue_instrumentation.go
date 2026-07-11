@@ -16,11 +16,12 @@ type QueueMetricsRecorder interface {
 
 // InstrumentedQueue wraps a priority queue to record OTEL metrics.
 type InstrumentedQueue[T comparable] struct {
-	queue      priorityqueue.PriorityQueue[T]
-	recorder   QueueMetricsRecorder
-	lock       sync.Mutex
-	enqueuedAt map[T]time.Time
-	done       chan struct{}
+	queue        priorityqueue.PriorityQueue[T]
+	recorder     QueueMetricsRecorder
+	lock         sync.Mutex
+	enqueuedAt   map[T]time.Time
+	done         chan struct{}
+	shutdownOnce sync.Once
 }
 
 // NewInstrumentedQueue creates a queue that records OTEL metrics.
@@ -126,15 +127,17 @@ func (iq *InstrumentedQueue[T]) Done(item T) {
 	iq.queue.Done(item)
 }
 
-// ShutDown shuts down the queue.
+// ShutDown shuts down the queue. Idempotent: the graceful-drain path calls ShutDown both
+// explicitly (to wake parked workers at the start of the drain) and via a deferred cleanup, so
+// close(iq.done) is guarded by shutdownOnce to avoid a close-of-closed-channel panic.
 func (iq *InstrumentedQueue[T]) ShutDown() {
-	close(iq.done)
+	iq.shutdownOnce.Do(func() { close(iq.done) })
 	iq.queue.ShutDown()
 }
 
-// ShutDownWithDrain shuts down the queue after draining it.
+// ShutDownWithDrain shuts down the queue after draining it. Idempotent (see ShutDown).
 func (iq *InstrumentedQueue[T]) ShutDownWithDrain() {
-	close(iq.done)
+	iq.shutdownOnce.Do(func() { close(iq.done) })
 	iq.queue.ShutDownWithDrain()
 }
 

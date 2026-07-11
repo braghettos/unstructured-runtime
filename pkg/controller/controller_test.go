@@ -68,10 +68,15 @@ func (m *mockExternalClient) Delete(ctx context.Context, mg *unstructured.Unstru
 }
 
 type mockEventRecorder struct {
+	mu     sync.Mutex
 	events []event.Event
 }
 
 func (m *mockEventRecorder) Event(obj runtime.Object, ev event.Event) {
+	// A real event.Recorder is safe for concurrent use by multiple reconcile workers; the mock must
+	// be too, or a multi-worker test (e.g. the drain requeue-storm) races on the events slice.
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.events = append(m.events, ev)
 }
 
