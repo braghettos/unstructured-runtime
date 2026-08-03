@@ -11,14 +11,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/krateoplatformops/unstructured-runtime/pkg/certwatcher"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/certwatcher"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"k8s.io/client-go/rest"
 	certutil "k8s.io/client-go/util/cert"
 
-	"github.com/krateoplatformops/unstructured-runtime/pkg/internal/httpserver"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/metrics"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/internal/httpserver"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/logging"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/metrics"
 )
 
 const (

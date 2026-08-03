@@ -3,7 +3,7 @@ package metrics
 import (
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/krateoplatformops/unstructured-runtime/pkg/metrics"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/metrics"
 )
 
 var (

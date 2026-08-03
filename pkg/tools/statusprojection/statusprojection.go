@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/krateoplatformops/plumbing/jqutil"
+	"github.com/krateo-platformops/plumbing/jqutil"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 )

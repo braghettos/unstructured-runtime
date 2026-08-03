@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/test"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/test"
 )
 
 func TestWrap(t *testing.T) {

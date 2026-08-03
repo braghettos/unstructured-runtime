@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/krateoplatformops/unstructured-runtime/pkg/controller/priorityqueue"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/controller/priorityqueue"
 )
 
 // QueueMetricsRecorder records queue-related OTEL telemetry.

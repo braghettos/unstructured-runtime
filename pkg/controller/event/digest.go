@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/krateoplatformops/unstructured-runtime/pkg/controller/objectref"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/controller/objectref"
 	"github.com/twmb/murmur3"
 )
 

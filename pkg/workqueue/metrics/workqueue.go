@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/krateoplatformops/unstructured-runtime/pkg/metrics"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/client-go/util/workqueue"
 )

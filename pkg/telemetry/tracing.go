@@ -3,8 +3,8 @@ package telemetry
 import (
 	"context"
 
-	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/meta"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/logging"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/meta"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -14,7 +14,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const tracerName = "github.com/krateoplatformops/unstructured-runtime"
+const tracerName = "github.com/krateo-platformops/unstructured-runtime"
 
 // reconcileObject is the minimal surface StartReconcileSpan needs (satisfied by
 // *unstructured.Unstructured) — keeps pkg/telemetry free of a k8s dependency.

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/krateoplatformops/unstructured-runtime/pkg/meta"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/meta"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"

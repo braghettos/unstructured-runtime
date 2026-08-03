@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/krateoplatformops/unstructured-runtime/pkg/workqueue/metrics"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/workqueue/metrics"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/clock"
 )

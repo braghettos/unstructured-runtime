@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/pluralizer"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/dynamic"

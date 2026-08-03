@@ -3,7 +3,7 @@ package event
 import (
 	"testing"
 
-	"github.com/krateoplatformops/unstructured-runtime/pkg/controller/objectref"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/controller/objectref"
 	"github.com/stretchr/testify/assert"
 )
 

@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/krateoplatformops/plumbing/shortid"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
+	"github.com/krateo-platformops/plumbing/shortid"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/logging"
 	"go.opentelemetry.io/otel/trace"
 )
 

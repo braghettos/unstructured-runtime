@@ -1,4 +1,4 @@
-module github.com/krateoplatformops/unstructured-runtime
+module github.com/krateo-platformops/unstructured-runtime
 
 go 1.25.6
 
@@ -9,7 +9,7 @@ require (
 	github.com/google/btree v1.1.3
 	github.com/google/go-cmp v0.7.0
 	github.com/google/gofuzz v1.2.0
-	github.com/krateoplatformops/plumbing v1.7.3
+	github.com/krateo-platformops/plumbing v1.13.0
 	github.com/onsi/ginkgo/v2 v2.27.2
 	github.com/onsi/gomega v1.38.2
 	github.com/prometheus/client_golang v1.23.2
@@ -105,5 +105,3 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
-
-replace github.com/krateoplatformops/plumbing => github.com/braghettos/plumbing v1.7.7

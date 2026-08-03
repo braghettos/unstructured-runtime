@@ -3,14 +3,14 @@ package builder
 import (
 	"time"
 
-	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/controller/event"
-	ctrlevent "github.com/krateoplatformops/unstructured-runtime/pkg/controller/event"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/meta"
-	metricsserver "github.com/krateoplatformops/unstructured-runtime/pkg/metrics/server"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/telemetry"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/controller"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/controller/event"
+	ctrlevent "github.com/krateo-platformops/unstructured-runtime/pkg/controller/event"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/logging"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/meta"
+	metricsserver "github.com/krateo-platformops/unstructured-runtime/pkg/metrics/server"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/pluralizer"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/telemetry"
 	"golang.org/x/time/rate"
 	"k8s.io/client-go/util/workqueue"
 )

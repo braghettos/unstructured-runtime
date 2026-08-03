@@ -19,9 +19,9 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
-	"github.com/krateoplatformops/unstructured-runtime/pkg/certwatcher"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/certwatcher/metrics"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/certwatcher"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/certwatcher/metrics"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/logging"
 )
 
 var _ = Describe("CertWatcher", func() {

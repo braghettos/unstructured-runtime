@@ -11,8 +11,8 @@ import (
 	"k8s.io/utils/clock"
 	"k8s.io/utils/ptr"
 
-	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/workqueue/metrics"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/logging"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/workqueue/metrics"
 )
 
 // AddOpts describes the options for adding items to the queue.

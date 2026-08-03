@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/logging"
 )
 
 type mockLogger struct {

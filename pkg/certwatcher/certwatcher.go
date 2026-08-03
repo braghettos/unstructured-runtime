@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/certwatcher/metrics"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/certwatcher/metrics"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/logging"
 	kerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"

@@ -3,7 +3,7 @@ package event
 import (
 	"time"
 
-	"github.com/krateoplatformops/unstructured-runtime/pkg/controller/objectref"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/controller/objectref"
 )
 
 type EventType string

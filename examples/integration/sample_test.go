@@ -12,11 +12,11 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/krateoplatformops/plumbing/e2e"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/controller/builder"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
+	"github.com/krateo-platformops/plumbing/e2e"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/controller"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/controller/builder"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/logging"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/pluralizer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -28,7 +28,7 @@ import (
 	"sigs.k8s.io/e2e-framework/pkg/features"
 	"sigs.k8s.io/e2e-framework/support/kind"
 
-	xenv "github.com/krateoplatformops/plumbing/env"
+	xenv "github.com/krateo-platformops/plumbing/env"
 )
 
 // MinimalExternalClient is a no-op ExternalClient for the demo.

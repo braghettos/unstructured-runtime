@@ -3,7 +3,7 @@ package priorityqueue
 import (
 	"sync"
 
-	"github.com/krateoplatformops/unstructured-runtime/pkg/workqueue/metrics"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/workqueue/metrics"
 	"k8s.io/client-go/util/workqueue"
 )
 

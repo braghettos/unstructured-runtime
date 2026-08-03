@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/logging"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
@@ -121,7 +121,7 @@ func Setup(ctx context.Context, log logging.Logger, cfg Config) (*Metrics, func(
 		sdkmetric.WithResource(res),
 	)
 
-	meter := provider.Meter("github.com/krateoplatformops/unstructured-runtime")
+	meter := provider.Meter("github.com/krateo-platformops/unstructured-runtime")
 	metrics, err := newMetrics(meter, log, cfg.DeploymentName)
 	if err != nil {
 		_ = provider.Shutdown(ctx)

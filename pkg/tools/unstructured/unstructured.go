@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/krateoplatformops/unstructured-runtime/pkg/controller/objectref"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured/condition"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/controller/objectref"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/tools/unstructured/condition"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
