@@ -1,61 +1,53 @@
 # unstructured-runtime
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/krateoplatformops/unstructured-runtime)](https://goreportcard.com/report/github.com/krateoplatformops/unstructured-runtime)
+Krateo's own composition runtime: a managed-reconciler framework for building Kubernetes controllers over dynamic clients and unstructured objects — no generated typed clients required.
 
-`unstructured-runtime` is a small, focused controller framework to reconcile
-Kubernetes custom resources using dynamic clients and unstructured objects.
-It provides a pluggable controller builder, a priority queue with rate
-limiting, Prometheus metrics integration, and helpers to implement ExternalClient
-adapters for your infrastructure.
+[![Go Report Card](https://goreportcard.com/badge/github.com/krateo-platformops/unstructured-runtime)](https://goreportcard.com/report/github.com/krateo-platformops/unstructured-runtime)
+[![Test and coverage](https://github.com/krateo-platformops/unstructured-runtime/actions/workflows/test.yaml/badge.svg)](https://github.com/krateo-platformops/unstructured-runtime/actions/workflows/test.yaml)
 
-## Key features
-- Dynamic client-based controllers (no generated typed clients required).
-- Priority queue with rate limiting and metrics integration.
-- Pluggable `ExternalClient` interface to Observe/Create/Update/Delete external resources.
-- Test helpers and coverage for builder and worker logic.
-- Minimal, dependency-light primitives suitable for embedding into operators.
+## What is this
 
-## Getting started
+A Go library that turns an `ExternalClient` (four methods: Observe / Create /
+Update / Delete) into a full controller for any GroupVersionResource, including
+CRDs that only exist at runtime. It provides the reconcile loop, a dedup'd
+priority queue with rate-limited retry, the `krateo.io/external-create-*`
+annotation handshake with incomplete-create recovery, finalizer handling,
+graceful drain on shutdown, and OpenTelemetry metrics/traces/logs. It is the
+engine inside Krateo's `composition-dynamic-controller`.
+Full picture: [docs/index.md](docs/index.md).
 
-Prerequisites:
-- Go 1.18+ and modules enabled.
-- (Optional) a kubeconfig for running controllers against a cluster.
-
-1. See how a controller is constructed in the builder tests for a minimal example:
-   - [pkg/controller/builder/builder_test.go](pkg/controller/builder/builder_test.go)
-   - Implementation: [pkg/controller/builder/builder.go](pkg/controller/builder/builder.go)
-2. The builder creates a controller with the core entrypoint [`controller.New`](pkg/controller/controller.go).
-   Review [`controller.New`](pkg/controller/controller.go) for how informers, queue and handlers are wired.
-   The main controller types and the `ExternalClient` interface are in:
-   - [`controller.New`](pkg/controller/controller.go)
-   - [`controller.ExternalClient`](pkg/controller/controller.go)
-3. Tests in this repo demonstrate typical usage patterns and fake clients to run unit tests without a real cluster.
-
-## Basic example
-
-Below is a minimal example that shows two ways to run a controller:
-- "production" style using the builder (`pkg/controller/builder`) and a real kubeconfig.
-- "test" style using a fake dynamic client (similar to the tests under [`pkg/controller`]).
-
-See the full runnable snippet:
-- integration-style test with local kind cluster: [examples/integration/sample_test.go](examples/integration/sample_test.go)
-
-Useful internal modules for building ExternalClient implementations:
-- Conditions & Status helpers: [`pkg/tools/unstructured/unstructured.go`](pkg/tools/unstructured/unstructured.go)
-- Metadata/annotation helpers: [`pkg/meta/meta.go`](pkg/meta/meta.go)
-- Pluralizer utilities (GVK <-> GVR): [pkg/pluralizer](pkg/pluralizer)
-- Short id generator (deterministic ids for tests): [`pkg/shortid/shortid.go`](pkg/shortid/shortid.go)
-- Workqueue metrics provider & integrations: [`pkg/workqueue/metrics/workqueue.go`](pkg/workqueue/metrics/workqueue.go)
-
-## Typical workflow
-- Implement an `ExternalClient` that satisfies the [`controller.ExternalClient`](pkg/controller/controller.go) interface and handles Observe/Create/Update/Delete.
-- Use the builder to construct a controller for a given GroupVersionResource (GVR).
-- Start the controller with a context and a desired number of workers.
-
-## Build & test
-
-To build the repository:
+## Install
 
 ```sh
-go build ./...
+go get github.com/krateo-platformops/unstructured-runtime
 ```
+
+## Configure
+
+See [docs/configuration.md](docs/configuration.md). Most used:
+
+| Setting | Default | Effect |
+|---|---|---|
+| `builder.WithResyncInterval(d)` | `3m` | informer resync → periodic Observe of every CR |
+| `builder.WithMaxRetries(n)` | `5` | retries before a failed event is dropped from the queue |
+| `builder.WithGracefulShutdownTimeout(d)` | `30s` | drain window for in-flight reconciles after SIGTERM |
+
+## Examples
+
+- [examples/quickstart](examples/quickstart) — compilable `main.go`: no-op `ExternalClient` reconciling a GVR via the builder.
+- [examples/integration](examples/integration) — full integration test on a local kind cluster (`-tags integration`).
+
+## Docs
+
+- [docs/index.md](docs/index.md) — the map
+- [docs/overview.md](docs/overview.md) — the reconcile loop and recovery semantics, traced to source
+- [docs/usage.md](docs/usage.md) — `go get` + minimal code to a running controller
+- [docs/configuration.md](docs/configuration.md) — the whole config surface (options, env)
+- [docs/api.md](docs/api.md) — the exported Go API surface
+- [docs/examples.md](docs/examples.md) — examples index
+- [docs/release.md](docs/release.md) — how a release ships (tag-only)
+- [docs/log.md](docs/log.md) — curated history
+
+## Develop & release
+
+`go build ./... && go test -race ./...` — release runbook: [docs/release.md](docs/release.md).
