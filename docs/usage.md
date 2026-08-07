@@ -1,0 +1,105 @@
+---
+type: Usage
+title: unstructured-runtime — usage
+description: go get + the minimal code from zero to a running controller; the ExternalClient contract.
+resource: github.com/krateo-platformops/unstructured-runtime
+tags: [go-get, builder, external-client]
+timestamp: 2026-08-07T00:00:00Z
+---
+
+# Usage
+
+This is a Go library, consumed with `go get` — there is no image, chart or CLI.
+
+```sh
+go get github.com/krateo-platformops/unstructured-runtime
+```
+
+Requires Go `1.25` (see [go.mod](../go.mod)). The module path is
+`github.com/krateo-platformops/unstructured-runtime`.
+
+## From zero to a running controller
+
+Three steps: implement `ExternalClient`, build a controller for your GVR with
+the builder, run it.
+
+```go
+package main
+
+import (
+	"context"
+
+	"github.com/krateo-platformops/unstructured-runtime/pkg/controller"
+	"github.com/krateo-platformops/unstructured-runtime/pkg/controller/builder"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+)
+
+type myClient struct{}
+
+func (c *myClient) Observe(ctx context.Context, mg *unstructured.Unstructured) (controller.ExternalObservation, error) {
+	// Pure read of external state. NEVER write mg here (see overview.md).
+	return controller.ExternalObservation{ResourceExists: true, ResourceUpToDate: true}, nil
+}
+func (c *myClient) Create(ctx context.Context, mg *unstructured.Unstructured) error { return nil }
+func (c *myClient) Update(ctx context.Context, mg *unstructured.Unstructured) error { return nil }
+func (c *myClient) Delete(ctx context.Context, mg *unstructured.Unstructured) error { return nil }
+
+func main() {
+	cfg, err := builder.GetConfig() // in-cluster; or build a *rest.Config yourself
+	if err != nil {
+		panic(err)
+	}
+	ctrl, err := builder.Build(context.Background(), builder.Configuration{
+		Config:       cfg,
+		GVR:          schema.GroupVersionResource{Group: "samples.krateo.io", Version: "v1", Resource: "samples"},
+		ProviderName: "sample-provider", // the event-recorder source name
+	})
+	if err != nil {
+		panic(err)
+	}
+	ctrl.SetExternalClient(&myClient{})
+	_ = ctrl.Run(context.Background(), 2) // blocks until ctx cancel, then drains
+}
+```
+
+The builder wires sane defaults for everything (queue, rate limiter, event
+recorders, pluralizer, no-op logger, disabled metrics server); every knob is a
+`builder.With…` functional option — the full list is in
+[configuration](./configuration.md). For out-of-cluster runs, build the
+`*rest.Config` from a kubeconfig instead of `builder.GetConfig()` — the
+[quickstart example](../examples/quickstart/main.go) does exactly that.
+
+## The ExternalClient contract
+
+- **Non-blocking and idempotent** (`pkg/controller/controller.go:44-48`):
+  `Create` must tolerate being called again after a success whose marker was
+  lost; `Delete` must not error when the resource is already gone.
+- **`Observe` is a pure read.** It must never write the managed CR: a write
+  inside `Observe` can 409 under concurrent modification and permanently wedge
+  the incomplete-create recovery. Persist deterministic metadata in
+  `Create`/`Update` instead. Rationale and history:
+  [overview](./overview.md#observe-must-be-side-effect-free).
+- Return errors as-is; the runtime sets conditions, emits events and retries
+  through the rate limiter (up to `MaxRetries`, default 5).
+
+## Operating a resource under this runtime
+
+The runtime reads these annotations on every managed CR (all in
+`pkg/meta/meta.go`):
+
+| Annotation | Meaning |
+|---|---|
+| `krateo.io/paused: "true"` | pause reconciliation (condition `ReconcilePaused`); remove to resume |
+| `krateo.io/deletion-policy: orphan\|delete` | on CR delete, leave or delete the external resource (default: delete) |
+| `krateo.io/management-policy: default\|observe\|observe-create-update\|observe-delete` | restrict which phases may act |
+| `krateo.io/external-name` | name of the resource on the external system |
+| `krateo.io/external-create-pending\|-succeeded\|-failed` | the create handshake — **managed by the runtime**; deleting `-pending` by hand queues a fresh Create (recovery lever) |
+| `krateo.io/traceparent`, `krateo.io/tracestate` | W3C trace context continued across the composition tree |
+
+## Who consumes it
+
+Krateo's `composition-dynamic-controller` (the per-CompositionDefinition
+controller deployed by
+[core-provider](https://github.com/krateo-platformops/core-provider)) is the
+primary consumer — every Krateo composition reconciles through this runtime.

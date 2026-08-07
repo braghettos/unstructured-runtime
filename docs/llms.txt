@@ -1,0 +1,15 @@
+# unstructured-runtime — LLM doc index (pinned: v1.4.0)
+# One line per file; regenerate the pin on release. This is a tag-only Go library:
+# read files at the tag matching the consumer's go.mod pin (tags are v-prefixed).
+docs/index.md: the map — what unstructured-runtime is + links to the whole bundle
+docs/overview.md: the reconcile loop and recovery semantics traced to pkg/controller — intake/classification, priority queue, external-create handshake, 2m-grace incomplete-create recovery, fail-on-409 pending write, Observe side-effect-free rule
+docs/usage.md: go get + minimal code to a running controller; the ExternalClient contract; operator annotations
+docs/configuration.md: the whole config surface — builder options, controller.Options, telemetry gates, DEBUG and OTEL_EXPORTER_OTLP_* env
+docs/api.md: the exported Go API surface, package by package
+docs/examples.md: index of the runnable examples
+docs/release.md: how a release ships — tag-only, vX.Y.Z tags, no OCI artifacts, no release workflow
+docs/log.md: curated history
+examples/quickstart/README.md: compilable main.go — no-op ExternalClient via the builder, out-of-cluster
+examples/quickstart/main.go: the example source — go run ./examples/quickstart
+examples/integration/README.md: kind-cluster integration test — go test -tags integration
+examples/integration/sample_test.go: the integration test source (build tag: integration)
